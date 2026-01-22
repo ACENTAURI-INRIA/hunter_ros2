@@ -29,6 +29,7 @@
 #include "ugv_sdk/utilities/protocol_detector.hpp"
 #include "hunter_msgs/msg/hunter_status.hpp"
 #include "hunter_msgs/msg/hunter_light_cmd.hpp"
+#include "hunter_msgs/msg/hunter_rc_state.hpp"
 
 namespace westonrobot {
 
@@ -85,14 +86,17 @@ class HunterMessenger {
         node_->create_publisher<nav_msgs::msg::Odometry>(odom_topic_name_, 50);
     status_pub_ = node_->create_publisher<hunter_msgs::msg::HunterStatus>(
         "/hunter_status", 10);
+    rc_state_pub = node_->create_publisher<hunter_msgs::msg::HunterRCState>(
+        "/hunter_rc_state", 10);
 
     // cmd subscriber
     motion_cmd_sub_ = node_->create_subscription<geometry_msgs::msg::Twist>(
         "/cmd_vel", 10,
         std::bind(&HunterMessenger::TwistCmdCallback, this,
                   std::placeholders::_1));
-
-    
+    motion_steer_cmd_sub = node_->create_subscription<geometry_msgs::msg::Twist>(
+        "/cmd_steer", 10,
+        std::bind(&HunterMessenger::SteeringCmdCallback, this, std::placeholders::_1));
   }
 
   void PublishStateToROS() {
@@ -107,6 +111,22 @@ class HunterMessenger {
     double dt = (current_time_ - last_time_).seconds();
 
     auto state = hunter_->GetRobotState();
+
+    //
+    {
+      hunter_msgs::msg::HunterRCState rc_msg;
+      RcStateMessage rc_state = state.rc_state;
+      rc_msg.set__swa(rc_state.swa);
+      rc_msg.set__swb(rc_state.swb);
+      rc_msg.set__swc(rc_state.swc);
+      rc_msg.set__swd(rc_state.swd);
+      rc_msg.set__stick_left_h(rc_state.stick_left_h);
+      rc_msg.set__stick_left_v(rc_state.stick_left_v);
+      rc_msg.set__stick_right_h(rc_state.stick_right_h);
+      rc_msg.set__stick_right_v(rc_state.stick_right_v);
+      rc_msg.set__var_a(rc_state.var_a);
+      rc_state_pub->publish(rc_msg);
+    }
 
     // publish hunter state message
     hunter_msgs::msg::HunterStatus status_msg;
@@ -177,9 +197,10 @@ class HunterMessenger {
 
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   rclcpp::Publisher<hunter_msgs::msg::HunterStatus>::SharedPtr status_pub_;
+  rclcpp::Publisher<hunter_msgs::msg::HunterRCState>::SharedPtr rc_state_pub;
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr motion_cmd_sub_;
-  
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr motion_steer_cmd_sub;
 
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
@@ -208,6 +229,10 @@ class HunterMessenger {
     // ROS_INFO("Cmd received:%f, %f", msg->linear.x, msg->angular.z);
   }
 
+  void SteeringCmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg) {
+    hunter_->SetMotionCommand(msg->linear.x, msg->angular.z);
+  }
+
   // template <typename T,std::enable_if_t<!std::is_base_of<HunterRobot, T>::value,bool> = true>
   void SetHunterMotionCommand(const geometry_msgs::msg::Twist::SharedPtr &msg) {
 
@@ -216,7 +241,7 @@ class HunterMessenger {
     double radian = 0;
     double phi_i = AngelVelocity2Angel(*msg,radian);
 
-    std::cout << "set steering angle: " << phi_i << std::endl;
+    //std::cout << "set steering angle: " << phi_i << std::endl;
     hunter_->SetMotionCommand(msg->linear.x, phi_i);
     // hunter_
  
