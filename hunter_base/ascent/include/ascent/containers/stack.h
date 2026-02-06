@@ -51,7 +51,7 @@ namespace asc
          return ptr;
       }
 
-      const pointer operator->() const noexcept
+      pointer operator->() const noexcept
       {
          return ptr;
       }
@@ -110,7 +110,7 @@ namespace asc
          return *ptr;
       }
 
-      const pointer operator->() const
+      pointer operator->() const
       {
          return ptr;
       }
