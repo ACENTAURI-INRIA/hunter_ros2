@@ -36,6 +36,7 @@ class HunterBaseRos : public rclcpp::Node {
   bool is_hunter_mini_ = false;
   bool is_omni_wheel_ = false;
 
+  bool use_stamped_twist_ = false;
   bool simulated_robot_ = false;
   int sim_control_rate_ = 50;
   

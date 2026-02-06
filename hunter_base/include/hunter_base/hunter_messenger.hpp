@@ -17,6 +17,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <geometry_msgs/msg/twist.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
@@ -62,6 +63,7 @@ class HunterMessenger {
   void SetOdometryFrame(std::string frame) { odom_frame_ = frame; }
   void SetBaseFrame(std::string frame) { base_frame_ = frame; }
   void SetOdometryTopicName(std::string name) { odom_topic_name_ = name; }
+  void SetUseStampedTwist(bool v) { use_stamped_twist_ = v; }
   void SetWeelbase(float Weelbase){
     l = Weelbase;
   }
@@ -89,14 +91,33 @@ class HunterMessenger {
     rc_state_pub = node_->create_publisher<hunter_msgs::msg::HunterRCState>(
         "/hunter_rc_state", 10);
 
-    // cmd subscriber
-    motion_cmd_sub_ = node_->create_subscription<geometry_msgs::msg::Twist>(
-        "/cmd_vel", 10,
-        std::bind(&HunterMessenger::TwistCmdCallback, this,
-                  std::placeholders::_1));
-    motion_steer_cmd_sub = node_->create_subscription<geometry_msgs::msg::Twist>(
-        "/cmd_steer", 10,
-        std::bind(&HunterMessenger::SteeringCmdCallback, this, std::placeholders::_1));
+    if (use_stamped_twist_) {
+      motion_stamped_cmd_sub_ = node_->create_subscription<geometry_msgs::msg::TwistStamped>(
+          "/cmd_vel", 10,
+          [this](const geometry_msgs::msg::TwistStamped::SharedPtr msg) {
+            this->TwistCmdCallback(msg->twist);
+          }
+      );
+      motion_stamped_steer_cmd_sub = node_->create_subscription<geometry_msgs::msg::TwistStamped>(
+          "/cmd_steer", 10,
+          [this](const geometry_msgs::msg::TwistStamped::SharedPtr msg) {
+            this->SteeringCmdCallback(msg->twist);
+          }
+      );
+    }
+    else {
+      // cmd subscriber
+      motion_cmd_sub_ = node_->create_subscription<geometry_msgs::msg::Twist>(
+          "/cmd_vel", 10,
+          [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
+            this->TwistCmdCallback(msg);
+          });
+      motion_steer_cmd_sub = node_->create_subscription<geometry_msgs::msg::Twist>(
+          "/cmd_steer", 10,
+          [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
+            this->SteeringCmdCallback(msg);
+          });
+    }
   }
 
   void PublishStateToROS() {
@@ -187,6 +208,8 @@ class HunterMessenger {
   std::string base_frame_;
   std::string odom_topic_name_;
 
+  bool use_stamped_twist_ = false;
+
   bool simulated_robot_ = false;
   int sim_control_rate_ = 50;
 
@@ -201,6 +224,9 @@ class HunterMessenger {
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr motion_cmd_sub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr motion_steer_cmd_sub;
+
+  rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr motion_stamped_cmd_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr motion_stamped_steer_cmd_sub;
 
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
@@ -218,6 +244,18 @@ class HunterMessenger {
   rclcpp::Time last_time_;
   rclcpp::Time current_time_;
 
+  void TwistCmdCallback(const geometry_msgs::msg::Twist& msg) {
+    if (!simulated_robot_) {
+      double radian = 0;
+      double phi_i = AngelVelocity2Angel(msg, radian);
+      hunter_->SetMotionCommand(msg.linear.x, phi_i);
+    } else {
+      std::lock_guard<std::mutex> guard(twist_mutex_);
+      current_twist_ = msg;
+    }
+    // ROS_INFO("Cmd received:%f, %f", msg->linear.x, msg->angular.z);
+  }
+
   void TwistCmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg) {
     
     if (!simulated_robot_) {
@@ -231,6 +269,10 @@ class HunterMessenger {
 
   void SteeringCmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg) {
     hunter_->SetMotionCommand(msg->linear.x, msg->angular.z);
+  }
+
+  void SteeringCmdCallback(const geometry_msgs::msg::Twist & msg) {
+    hunter_->SetMotionCommand(msg.linear.x, msg.angular.z);
   }
 
   // template <typename T,std::enable_if_t<!std::is_base_of<HunterRobot, T>::value,bool> = true>

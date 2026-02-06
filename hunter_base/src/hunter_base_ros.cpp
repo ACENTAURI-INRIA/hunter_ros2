@@ -27,6 +27,8 @@ HunterBaseRos::HunterBaseRos(std::string node_name)
   this->declare_parameter("simulated_robot", rclcpp::ParameterValue(false));
   this->declare_parameter("control_rate", rclcpp::ParameterValue(50));
 
+  this->declare_parameter("use_stamped_twist", rclcpp::ParameterValue(false));
+
   LoadParameters();
 }
 
@@ -38,7 +40,7 @@ void HunterBaseRos::LoadParameters() {
   this->get_parameter_or<std::string>("odom_topic_name", odom_topic_name_,
                                       "odom");
 
-
+  this->get_parameter_or<bool>("use_stamped_twist", use_stamped_twist_, false);
 
   this->get_parameter_or<bool>("simulated_robot", simulated_robot_, false);
   this->get_parameter_or<int>("control_rate", sim_control_rate_, 50);
@@ -110,6 +112,7 @@ void HunterBaseRos::Run() {
     messenger->SetOdometryFrame(odom_frame_);
     messenger->SetBaseFrame(base_frame_);
     messenger->SetOdometryTopicName(odom_topic_name_);
+    messenger->SetUseStampedTwist(use_stamped_twist_);
     if (simulated_robot_) messenger->SetSimulationMode(sim_control_rate_);
 
     // connect to robot and setup ROS subscription
